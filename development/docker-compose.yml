@@ -1,0 +1,18 @@
+services:
+  cache:
+    image: redis:alpine
+    container_name: cache_main
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+  dynamodb:
+    image: amazon/dynamodb-local
+    container_name: dynamodb_container
+    ports:
+      - "8000:8000"
+    volumes:
+      - dynamodb_data:/home/dynamodblocal
+volumes:
+  redis_data:
+  dynamodb_data:
