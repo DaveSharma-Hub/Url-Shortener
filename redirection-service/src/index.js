@@ -7,10 +7,13 @@ import { DatabaseWrapper } from './database/Database.js';
 const PORT = Number.parseInt(process.env.PORT || '4000', 10);
 
 const app = express();
-const db = new DatabaseWrapper();
+(async function(){
+    const db = new DatabaseWrapper();
+    await db.setup();
+    
+    register_middleware(app);
+    register_routes(app, {database: db});
 
-register_middleware(app);
-register_routes(app, {database: db});
 
-
-app.listen(PORT, ()=>console.log(`Redirection server listening on port ${PORT}`));
+    app.listen(PORT, ()=>console.log(`Redirection server listening on port ${PORT}`));
+})();

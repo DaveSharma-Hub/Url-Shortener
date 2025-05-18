@@ -7,14 +7,22 @@ import {
   PutItemCommand,
   CreateTableCommand
 } from "@aws-sdk/client-dynamodb";
+import { RedisCacheClient } from "../cache/redisClient.js";
 
 const DYNAMODB_DATABASE = process.env.DYNAMODB_DATABASE || "urldatabase";
 
 export class DatabaseWrapper {
-  #client = new DynamoDBClient(getAWSConfig());
+  #client = null;
+  #redisCache = null;
+
   constructor() {
+    this.#client = new DynamoDBClient(getAWSConfig());
+    this.#redisCache = new RedisCacheClient();
+  }
+
+  async setup(){
     if (process.env.ENV === "DEVELOPMENT") {
-      this.#client.send(new ListTablesCommand()).then((table) => {
+      const table = await this.#client.send(new ListTablesCommand());
         const contains = table?.TableNames?.includes(DYNAMODB_DATABASE);
         if (!contains) {
           const input = {
@@ -43,9 +51,9 @@ export class DatabaseWrapper {
             },
           };
           this.#client.send(new CreateTableCommand(input));
-        }
-      });
+       }
     }
+    await this.#redisCache.setup();
   }
 
   async add(key, value) {
@@ -64,10 +72,17 @@ export class DatabaseWrapper {
       TableName: DYNAMODB_DATABASE,
     };
     const command = new PutItemCommand(input);
-    await this.#client.send(command);
+    await Promise.all([
+      this.#client.send(command),
+      this.#redisCache.set(key, value)
+    ]);
   }
 
   async get(key) {
+    const cachedValue = await this.#redisCache.get(key);
+    if(cachedValue){
+      return cachedValue;
+    }
     const input = {
       Key: {
         id: {
@@ -78,7 +93,11 @@ export class DatabaseWrapper {
     };
     const command = new GetItemCommand(input);
     const response = await this.#client.send(command);
-    return response?.Item?.originalUrl?.S;
+    const value = response?.Item?.originalUrl?.S;
+    if(value){
+      await this.#redisCache.set(key, value);
+    }
+    return value;
   }
 
   async delete(key) {

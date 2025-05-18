@@ -1,25 +1,41 @@
 import 'dotenv/config';
-import { v4 as uuid } from 'uuid';
+import URL from 'url';
 const DOMAIN = process.env.GATEWAY_DOMAIN || 'http://localhost:3000';
-const MACHINE_ID = process.env.MACHINE_ID;
 
-const isHttps = (url) => true;
+const isTLS = (url) => {
+    const endpoint = URL.parse(url);
+    const protocol = endpoint.protocol;
+    return protocol === 'https:' || protocol === 'wss:';
+};
 const isMaliciousUrl = (url) => false;
 
-const isValidUrl = (url) => isHttps(url) && !isMaliciousUrl(url)
+const isValidUrl = (url) => isTLS(url) && !isMaliciousUrl(url)
 
-const generateGloballyUniqueShortId = () => {
-    return Buffer.from(uuid().replace('-', '')).toString('base64url');
+const generateGloballyUniqueShortId = (machine_number, getNextLocalNumber) => {
+    return Buffer.from(`${machine_number}_${getNextLocalNumber()}`).toString('base64url');
 }
 
 export const add_url = ({
-    database
+    database,
+    machine_number,
+    getNextLocalNumber
 }) => async(req, res) => {
     const { url } = req.body;
     if(isValidUrl(url)){
-        const shortId = generateGloballyUniqueShortId();
-        await database.add(shortId, url);
+        const existingShortUrl = await database.get(url);
+        console.log(existingShortUrl);
+        if(existingShortUrl){
+            res.send({
+                shortUrl: existingShortUrl
+            });
+            return;
+        }
+        const shortId = generateGloballyUniqueShortId(machine_number, getNextLocalNumber);
         const shortUrl = `${DOMAIN}/api/urls/${shortId}`;
+        await Promise.all([
+            database.add(shortId, url),
+            database.add(url, shortUrl),
+        ]);
         res.send({
             shortUrl: shortUrl
         });
